@@ -1,19 +1,23 @@
 /*jshint esversion:6*/
 var obs = new OBSWebSocket();
+let GSTATE = "start"
+let SCALE = 1.0
+let POSITION = {x: 0, y: 0}
 
 // CHANGE THE IP:PORT AND PASSWORD (OPTIONAL)
-var address = "ws://192.168.1.2:4455"
-var password = "Roboflow"
+var address = "ws://172.16.0.123:4455"
+var password = "xxx"
 
 // ESTABLISH OBS SCENES AND SOURCES
-let Scene_1 = 'WebcamScene'
-let Scene_2 = 'WebcamScene2'
-let Source_1 = 'Lenny'
+let Scene_1 = 'webscene'
+let Scene_2 = 'webscene2'
+let Source_1 = 'lenny'
+let Source_2 = 'video'
 
 // SET UP ROBOFLOW.JS AUTH VARIABLES
-let publishable_key = "API_KEY";
-let model = "MODEL_ID";
-let version = 1;
+let publishable_key = "xxx";
+let model = "hand-gestures-fsph8";
+let version = 5;
 
 // TUNE ROBOFLOW.JS DETECTION VARIABLES (HIGHER THRESHOLD MEANS MORE ACCURATE)
 let threshold = 0.5;
@@ -38,6 +42,86 @@ async function move_lenny(x ,y) {
     Source_1_ID = ret.sceneItemId;
     obs.call('SetSceneItemTransform', {'sceneName': Scene_1, 'sceneItemId': Source_1_ID, 'sceneItemTransform': {'positionX': x, 'positionY': y}});
 }
+
+async function getVideoSceneId() {
+    const ret = await obs.call('GetSceneItemId', {'sceneName': Scene_1, 'sourceName': Source_2})
+    return ret.sceneItemId;
+}
+
+async function start_video() {
+    const sceneId = await getVideoSceneId()
+    await obs.call('SetSceneItemEnabled', {
+        'sceneItemId': sceneId,
+        'sceneName': Scene_1,
+        sceneItemEnabled: false
+    })
+    await obs.call('SetSceneItemEnabled', {
+        'sceneItemId': sceneId,
+        'sceneName': Scene_1,
+        sceneItemEnabled: true
+    })
+}
+
+async function stop_video() {
+    const sceneId = await getVideoSceneId()
+    await obs.call('SetSceneItemEnabled', {
+        'sceneItemId': sceneId,
+        'sceneName': Scene_1,
+        sceneItemEnabled: false
+    })
+}
+
+async function get_video_position() {
+    const sceneId = await getVideoSceneId()
+    return await obs.call('GetSceneItemTransform', {
+        'sceneItemId': sceneId,
+        'sceneName': Scene_1
+    })
+}
+
+async function move_video(x ,y) {
+    POSITION = {x, y}
+    const sceneId = await getVideoSceneId()
+    return await obs.call('SetSceneItemTransform', {
+        sceneItemId: sceneId,
+        sceneName: Scene_1,
+        sceneItemTransform: {positionX: x, positionY: y}
+    })
+}
+
+async function shift_video(x ,y) {
+    POSITION = {
+        x: POSITION.x + x, 
+        y: POSITION.y + y
+    }
+    const sceneId = await getVideoSceneId()
+    return await obs.call('SetSceneItemTransform', {
+        sceneItemId: sceneId,
+        sceneName: Scene_1,
+        sceneItemTransform: {positionX: POSITION.x, positionY: POSITION.y}
+    })
+}
+
+async function scale_video(inc) {
+    SCALE += SCALE * inc
+    const transform = {
+        sourceHeight: parseInt(720 * SCALE), 
+        sourceWidth: parseInt(1280 * SCALE)
+    }
+    const sceneId = await getVideoSceneId()
+    return await obs.call('SetSceneItemTransform', {
+        sceneItemId: sceneId,
+        sceneName: Scene_1,
+        sceneItemTransform: transform
+    })
+}
+
+
+// obs.send('SetSceneItemTransform', { 'resource': 'NomeDaFonteDeCena', 'state': true });}).catch(err => {
+//   // Houve um erro ao conectar ao OBS Studio
+//   console.log(err);
+// });
+
 
 $(function () {
     const video = $("video")[0];
@@ -218,36 +302,74 @@ $(function () {
 
         // FUNCTION FOR CONTROLLING OBS INTERACTIONS
         predictions.forEach(function (prediction) {
+
+            console.log(prediction.class)
+            const bbox = prediction.bbox
             
-            if (prediction.class === "Stop") {
-                move_lenny(-500, -500);
-                console.log("HIDING OBJECTS!")
+            // if (prediction.class === "Stop") {
+            //     move_lenny(-500, -500);
+            //     console.log("HIDING OBJECTS!")
+            // }
+
+            if (prediction.class === "one") {
+                if (GSTATE == "start") {
+                    GSTATE = "play1"
+                    move_video(-800, 190)
+                    start_video()
+                    setTimeout(() => {
+                        stop_video()
+                        GSTATE = "start2"
+                    }, 1900)
+                }
+            } else if (prediction.class === "two") {
+                if (GSTATE == "start2") {
+                    GSTATE = "play2"
+                    move_video(-800, 190)
+                    start_video()
+                    setTimeout(() => {
+                        stop_video()
+                        GSTATE = "start3"
+                    }, 2800)
+                }
+            } else if (prediction.class === "three") {
+                if (GSTATE == "start3") {
+                    GSTATE = "play3"
+                    move_video(10, 190)
+                    start_video()
+                }
+            // } else if (prediction.class === "four" || prediction.class == "five") {
+            //     if (GSTATE === "play3") {
+            //         scale_video(0.01)
+            //     }
+            } else if (prediction.class === "zero") {
+                const speed = 6
+                if (GSTATE === "play3") {
+                    shift_video(
+                        Math.sign(speed * (bbox.x - POSITION.x)),
+                        Math.sign(speed * (bbox.y - POSITION.y)),
+                    )
+                }
             }
 
-            if (prediction.class === "Grab") {
-                move_lenny(prediction.bbox.x, prediction.bbox.y);
-                console.log("GRABBING OBJECT")
-            }
+            // if (prediction.class === "Thumb Down") {
+            //     webcam_scene_2();
+            //     console.log("TURNING TO SCENE 2")
+            // }
 
-            if (prediction.class === "Thumb Down") {
-                webcam_scene_2();
-                console.log("TURNING TO SCENE 2")
-            }
+            // if (prediction.class === "Thumb Up") {
+            //     webcam_scene();
+            //     console.log("TURNING TO SCENE 1")
+            // }
 
-            if (prediction.class === "Thumb Up") {
-                webcam_scene();
-                console.log("TURNING TO SCENE 1")
-            }
+            // if (prediction.class === "Down") {
+            //     console.log("MOVE LENNY DOWN!")
+            //     move_lenny(dimensions.width/2, dimensions.height*0.75);
+            // }
 
-            if (prediction.class === "Down") {
-                console.log("MOVE LENNY DOWN!")
-                move_lenny(dimensions.width/2, dimensions.height*0.75);
-            }
-
-            if (prediction.class === "Up") {
-                console.log("MOVE LENNY UP!")
-                move_lenny(dimensions.width/2, dimensions.height*0.25);
-            }
+            // if (prediction.class === "Up") {
+            //     console.log("MOVE LENNY UP!")
+            //     move_lenny(dimensions.width/2, dimensions.height*0.25);
+            // }
         });
     };
 
